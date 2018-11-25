@@ -1,0 +1,1 @@
+cmd_/home/joey/programming/Assignment4/hal.ko := ld -r -m elf_x86_64 -z max-page-size=0x200000 -T ./scripts/module-common.lds --build-id  -o /home/joey/programming/Assignment4/hal.ko /home/joey/programming/Assignment4/hal.o /home/joey/programming/Assignment4/hal.mod.o ;  true
