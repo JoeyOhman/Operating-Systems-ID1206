@@ -1,2 +1,1 @@
-# Operating-Systems-ID1206
-Operating systems course held at KTH
+This is a convenient course!
