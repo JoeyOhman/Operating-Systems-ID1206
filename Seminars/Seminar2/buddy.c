@@ -7,6 +7,8 @@
 #define LEVELS 8 // Makes max level 12 => 2^12 = 4096 = 4KB
 #define PAGE 4096
 
+void printFlist();
+
 enum flag {Free, Taken};
 
 struct head {
@@ -37,18 +39,6 @@ struct head *buddy(struct head* block) {
   long int mask = 0x1 << (index + MIN); // find relevant bit for buddy
   return (struct head*)((long int)block ^ mask); // toggle bit to get address of budy
 }
-
-/*
-struct head *merge(struct head* block, struct head* sibling) {
-  struct head *primary;
-  if(sibling < block) // primary block is the one of lowest address
-    primary = sibling;
-  else
-    primary = block;
-  primary->level = primary->level+1; // coalesce, secondary header will be included in user's bytes
-  return primary;
-}
-*/
 
 // New merge, NOT INCREMENTING LEVEL THOUGH, nor changing free
 struct head* primary(struct head* block) {
@@ -102,6 +92,10 @@ struct head* split(struct head *block) {
 
 void addBlockToFlists(struct head* block) {
   struct head* first = flists[block->level];
+  if(block->level == 5) {
+    printf("Block lvl5 added to flist: %p\n", block);
+  }
+  assert(block != first);
   if(first != NULL) {
     first->prev = block;
     block->next = first;
@@ -112,8 +106,15 @@ void addBlockToFlists(struct head* block) {
 void removeBlockFromFlists(struct head* block) {
   if(flists[block->level] == block) { // First
     flists[block->level] = block->next;
+    printf("Removed first!\n");
+    if(flists[block->level] != NULL) {
+      printf("Removed block{%p}, new first{%p}\n", block, block->next);
+      printf("New first prev={%p}, next={%p}\n", flists[block->level]->prev, flists[block->level]->next);
+    }
   } else { // Not first
-
+    //printFlist();
+    printf("\nprev: %p\n", block->prev);
+    printf("block status=%d, block level=%d\n", block->status, block->level);
     block->prev->next = block->next; // There is a block prev
   }
 
@@ -150,13 +151,22 @@ struct head* find(int index) {
   return splitUntilMatchingLevel(foundHead, index);
 }
 
+// Find buddy, merge if free, repeat, then add to free list
 void insert(struct head* block) {
-  struct *head buddy = buddy(block);
+  block->status = Free;
+  struct head* buddyBlock = buddy(block);
 
-  while(buddy->status == Free) {
+  // Merge while buddy is free and not on max level
+  while(buddyBlock->status == Free && block->level < LEVELS
+    && buddyBlock->level == block->level) {
+
+    printf("Merging, from level=%d\n", block->level);
+    removeBlockFromFlists(buddyBlock);
     block = merge(block);
-    buddy = buddy(block);
+    buddyBlock = buddy(block);
   }
+  // Merged as much as possible, add resulting block to flist
+  addBlockToFlists(block);
 }
 
 void* balloc(size_t size) {
@@ -183,13 +193,17 @@ void printFlist() {
     struct head* block = flists[i];
     while(block != NULL) {
       counter++;
+      if(block == block->next) {
+        printf("BLOCK POINTING TO ITSELF IN FLIST!\n");
+        break;
+      }
       block = block->next;
     }
     printf("Level %d: #freeBlocks=%d\n", i, counter);
   }
 }
 
-void testBalloc() {
+void testBallocBfree() {
   assert(balloc(0) == NULL);
   printf("\n");
   printFlist();
@@ -222,6 +236,32 @@ void testBalloc() {
   void* level0Block2 = balloc(1);
   assert(magic(level0Block2)->level == 0);
   printFlist();
+
+  printf("Freeing level 0 block...\n");
+  bfree(level0Block);
+  printFlist();
+
+  printf("Freeing level 0 block...\n");
+  bfree(level0Block2);
+  printFlist();
+
+  printf("Freeing level 5 block..., buddy should be taken even though a 5 is free...\n");
+  bfree(level5Block);
+  printFlist();
+
+  printf("Freeing another level 5 block, should see a merge..\n");
+  bfree(level5Block2);
+  printFlist();
+
+  printf("Freeing all blocks...\n");
+  bfree(level7Block);
+  printf("Freed 7block!\n");
+  bfree(level1Block);
+  printf("Freed 1block! (last)\n");
+  printFlist();
+
+  // Inconsistent execution, segmentation error!
+
 }
 
 void test() {
@@ -254,7 +294,7 @@ void test() {
   assert(level(PAGE - sizeof(struct head)) == LEVELS-1);
 
   // Test balloc and bfree
-  testBalloc();
+  testBallocBfree();
 
   printf("\nAll assertions passed! If prints are correct, program should be working!\n");
 }
