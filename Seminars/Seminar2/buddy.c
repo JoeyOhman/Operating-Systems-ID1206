@@ -16,6 +16,8 @@ struct head {
   struct head *prev;
 };
 
+struct head* flists[LEVELS] = {NULL};
+
 struct head* new() {
   struct head *new = (struct head*) mmap(NULL, PAGE,
                                         PROT_READ | PROT_WRITE,
@@ -48,11 +50,19 @@ struct head *merge(struct head* block, struct head* sibling) {
 }
 */
 
-// New merge, NOT INCREMENTING LEVEL THOUGH
+// New merge, NOT INCREMENTING LEVEL THOUGH, nor changing free
 struct head* primary(struct head* block) {
   int index = block->level;
   long int mask = 0xffffffffffffffff << (1 + index + MIN); // Set all up to and including the buddy bit to 0
   return (struct head*)((long int)block & mask);
+}
+
+// Merges with buddy and returns the head (primary of buddies with flags changed)
+struct head* merge(struct head* block) {
+  struct head* prim = primary(block);
+  prim->level++;
+  prim->status = Free;
+  return prim;
 }
 
 // jump forward one header size so the header becomes hidden for the user
@@ -65,32 +75,186 @@ struct head* magic(void* memory) {
   return((struct head*)memory - 1);
 }
 
-int level(int size) {
-  int req = size + sizeof(struct head); // size required is users size + header
+int level(int req) {
+  int total = req + sizeof(struct head); // size required is users size + header
 
   int i = 0;
-  req = req >> MIN; // If required size < 32 => index = 0
-
-  // Should this not be > 1??? think of the case where req = 32 = 2^5 )
-  // the 6th bit is 1 and LEVEL will be 1
-  while(req > 0) { // Double memory size until it is greater than required
+  int size = 1 << MIN;
+  while(total > size) { // double size until we have enough
+    size <<= 1;
     i++;
-    req = req >> 1;
   }
   return i;
 }
 
 // Should we not set flags?
-struct head *split(struct head *block) {
+// Splits block and returns secondary, primary is the argument now
+struct head* split(struct head *block) {
   int index = block->level - 1;
   int mask = 0x1 << (index + MIN); // find relevant bit for buddy
-  return (struct head*)((long int)block | mask); // return secondary
+  struct head* secondary = (struct head*)((long int)block | mask);
+  block->level = index;
+  secondary->level = index;
+  block->status = Free;
+  secondary->status = Free;
+  return secondary;
+}
+
+void addBlockToFlists(struct head* block) {
+  struct head* first = flists[block->level];
+  if(first != NULL) {
+    first->prev = block;
+    block->next = first;
+  }
+  flists[block->level] = block;
+}
+
+void removeBlockFromFlists(struct head* block) {
+  if(flists[block->level] == block) { // First
+    flists[block->level] = block->next;
+  } else { // Not first
+
+    block->prev->next = block->next; // There is a block prev
+  }
+
+  if(block->next != NULL) { // Not last
+    // Unlink block
+    block->next->prev = block->prev;
+  }
+
+  block->next = NULL;
+  block->prev = NULL;
+}
+
+struct head* splitUntilMatchingLevel(struct head* block, int level) {
+
+  while(block->level > level) {
+    struct head* buddy = split(block);
+    addBlockToFlists(buddy);
+  }
+  block->status = Taken;
+  return block;
+}
+
+struct head* find(int index) {
+  int foundIndex = index;
+  while(flists[foundIndex] == NULL) {
+    if(foundIndex == LEVELS-1) {
+      // Highest level without finding free block, allocate new!
+      return splitUntilMatchingLevel(new(), index);
+    }
+    foundIndex++;
+  }
+  struct head* foundHead = flists[foundIndex];
+  removeBlockFromFlists(foundHead);
+  return splitUntilMatchingLevel(foundHead, index);
+}
+
+void insert(struct head* block) {
+  struct *head buddy = buddy(block);
+
+  while(buddy->status == Free) {
+    block = merge(block);
+    buddy = buddy(block);
+  }
+}
+
+void* balloc(size_t size) {
+  if(size == 0) {
+    return NULL;
+  }
+  int index = level(size);
+  struct head* taken = find(index);
+  return hide(taken);
+}
+
+void bfree(void* memory) {
+  if(memory != NULL) {
+    struct head* block = magic(memory);
+    insert(block);
+  }
+  return;
+}
+
+void printFlist() {
+  printf("Flists:\n");
+  for(int i = LEVELS-1; i >= 0; i--) {
+    int counter = 0;
+    struct head* block = flists[i];
+    while(block != NULL) {
+      counter++;
+      block = block->next;
+    }
+    printf("Level %d: #freeBlocks=%d\n", i, counter);
+  }
+}
+
+void testBalloc() {
+  assert(balloc(0) == NULL);
+  printf("\n");
+  printFlist();
+
+  printf("Allocating level 0 block...\n");
+  void* level0Block = balloc(1);
+  assert(magic(level0Block)->level == 0);
+  printFlist();
+
+  printf("Allocating level 1 block...\n");
+  void* level1Block = balloc(33 - sizeof(struct head));
+  assert(magic(level1Block)->level == 1);
+  printFlist();
+
+  printf("Allocating level 5 block...\n");
+  void* level5Block = balloc(1024 - sizeof(struct head));
+  assert(magic(level5Block)->level == 5);
+  printFlist();
+  printf("Allocating level 5 block...\n");
+  void* level5Block2 = balloc(1024 - sizeof(struct head));
+  assert(magic(level5Block2)->level == 5);
+  printFlist();
+
+  printf("Allocating level 7 block...\n");
+  void* level7Block = balloc(4096 - sizeof(struct head));
+  assert(magic(level7Block)->level == 7);
+  printFlist();
+
+  printf("Allocating level 0 block...\n");
+  void* level0Block2 = balloc(1);
+  assert(magic(level0Block2)->level == 0);
+  printFlist();
 }
 
 void test() {
   printf("Running test!!!!!11!!1\n");
   struct head *newBlock  = new();
   printf("Allocated new block: %p, status should be 0(free): %d, level should be 7 (max): %d\n", newBlock, newBlock->status, newBlock->level);
-  struct head *buddy = split(newBlock);
-  printf("Split new block, primary vs secondary: \n%p\n%p\n", newBlock, buddy);
+  struct head *buddyBlock = split(newBlock);
+  printf("Split new block, primary vs secondary: \n%p\n%p\n", newBlock, buddyBlock);
+  assert(buddy(buddyBlock) == newBlock); // secondarys buddy is primary
+  struct head* buddyOfBuddyBlock = split(buddyBlock);
+  assert(buddy(buddyBlock) == buddyOfBuddyBlock); //  primarys buddy is secondary
+  printf("Header after magic and memWrite: level=%d, status=%d\n", buddyOfBuddyBlock->level, buddyOfBuddyBlock->status);
+  int* mem = (int*)hide(buddyOfBuddyBlock);
+  *mem = 3;
+  struct head* imBack = magic((void*)mem);
+  assert(imBack == buddyOfBuddyBlock);
+  printf("Header after magic and memWrite: level=%d, status=%d\n", imBack->level, imBack->status);
+  struct head* primaryOfBuddyOfBuddyBlock = merge(buddyOfBuddyBlock);
+  assert(primaryOfBuddyOfBuddyBlock == buddyBlock);
+  assert(buddy(buddyBlock) == newBlock);
+  assert(primary(buddyBlock) == newBlock);
+  assert(primary(newBlock) == newBlock);
+  assert(merge(buddyBlock) == newBlock);
+  printf("Header of newBlock: level=%d, status=%d\n", newBlock->level, newBlock->status);
+
+  assert(level(32 - sizeof(struct head)) == 0);
+  assert(level(33 - sizeof(struct head)) == 1);
+  assert(level(64 - sizeof(struct head)) == 1);
+  assert(level(65 - sizeof(struct head)) == 2);
+  assert(level(PAGE - sizeof(struct head)) == LEVELS-1);
+
+  // Test balloc and bfree
+  testBalloc();
+
+  printf("\nAll assertions passed! If prints are correct, program should be working!\n");
 }
