@@ -2,7 +2,7 @@
 set terminal png
 set output "frag.png"
 
-set title "Fragmentation benchmark of buddy algorithm"
+set title "Fragmentation benchmark of buddy algorithm, 100k allocs each size"
 
 set key left center
 

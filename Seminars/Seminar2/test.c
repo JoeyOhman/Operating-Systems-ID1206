@@ -59,18 +59,57 @@ void benchSizeUtil(int bufferSize) {
   returnPages();
 }
 
+
+void evalMemory() {
+  printf("# Evaluation of memory \n#\n#{BufferSize\tOSAllocated\tUserGiven\tUserUsed}\n");
+  for(int i = 10; i < BUFFER; i+=10) {
+    benchSizeUtil(i);
+  }
+  benchSizeUtil(BUFFER);
+}
+
+void evalTime() {
+  int size_max = 4000;
+  int numOps = 100000;
+  int stride = 10;
+  // int ROUNDS = 1;
+  clock_t c_startBalloc, c_stopBalloc, c_startBfree, c_stopBfree;
+  printf("# Evaluation of time performance \n#\n#{AllocSize(Byte)\tTime(ms)Balloc\tTime(ms)Bfree}\n");
+  double processTimeBalloc = 0, processTimeBfree = 0;
+  for(int size = stride; size <= size_max; size+=stride) {
+
+    void* buffer[numOps];
+
+    c_startBalloc = clock();
+    for(int i = 0; i < numOps; i++) {
+      //balloc((size_t)request());
+      buffer[i] = malloc(size);
+    }
+    c_stopBalloc = clock();
+    processTimeBalloc = ((double)(c_stopBalloc - c_startBalloc)) / ((double)CLOCKS_PER_SEC/1000);
+
+    c_startBfree = clock();
+    for(int i = 0; i < numOps; i++) {
+      free(buffer[i]);
+    }
+    c_stopBfree = clock();
+    processTimeBfree = ((double)(c_stopBfree - c_startBfree)) / ((double)CLOCKS_PER_SEC/1000);
+
+    double avgOpTimeBalloc = (processTimeBalloc)/numOps;
+    double avgOpTimeBfree = (processTimeBfree)/numOps;
+    printf("%d\t%f\t%f\n", size, avgOpTimeBalloc, avgOpTimeBfree);
+    // printf("Average time per balloc: %f\n", processTime/numOps);
+    returnPages();
+  }
+}
+
 int main() {
   //test();
   srand(time(NULL));
 
-  //printf("Request: %d\n", request());
-  // printf("# Evaluation of memory \n#\n#{OSAllocated\tUserGiven\tPercentageExtFrag}\n");
-  printf("# Evaluation of memory \n#\n#{BufferSize\tOSAllocated\tUserGiven\tUserUsed}\n");
-  for(int i = 10; i < BUFFER; i+=10) {
-    benchSizeUtil(i);
-    //printEval();
-  }
-  benchSizeUtil(BUFFER);
-  //printEval();
+  //evalMemory();
+
+  evalTime();
+
   printf("# Benchmark done!\n");
 }
