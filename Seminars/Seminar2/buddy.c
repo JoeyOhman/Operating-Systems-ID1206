@@ -21,6 +21,11 @@ struct head {
   struct head *next;
   struct head *prev;
 };
+
+struct peggysue {
+  enum flag status;
+  short int level;
+};
 void removeBlockFromFlists(struct head* block);
 
 struct head* flists[LEVELS] = {NULL};
@@ -82,15 +87,18 @@ struct head* merge(struct head* block) {
 // jump forward one header size so the header becomes hidden for the user
 void *hide(struct head* block) {
   return (void*)(block + 1);
+  // return (void*)(((struct peggysue*)block) + 1);
 }
 
 // jump back to header which was hidden for user
 struct head* magic(void* memory) {
+  // return (struct head*)((struct peggysue*)memory - 1);
   return((struct head*)memory - 1);
 }
 
 int level(int req) {
   int total = req + sizeof(struct head); // size required is users size + header
+  // int total = req + sizeof(struct peggysue);
 
   int i = 0;
   int size = 1 << MIN;
@@ -216,6 +224,8 @@ void* balloc(size_t size) {
 void bfree(void* memory) {
   if(memory != NULL) {
     struct head* block = magic(memory);
+    block->next = NULL;
+    block->prev = NULL;
     memGiven -= 1 << (block->level + MIN);
     insert(block);
   }

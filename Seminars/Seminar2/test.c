@@ -4,7 +4,7 @@
 #include <math.h>
 #include <time.h>
 
-#define MAX 4000 // Max size of block
+#define MAX 100 // Max size of block
 #define MIN 8 // Min size of block
 #define BUFFER 1000 // How many blocks we can hold
 #define ALLOCS 100000 // How many times we alloc (and possibly free)
@@ -107,9 +107,9 @@ int main() {
   //test();
   srand(time(NULL));
 
-  //evalMemory();
+  evalMemory();
 
-  evalTime();
+  //evalTime();
 
   printf("# Benchmark done!\n");
 }
