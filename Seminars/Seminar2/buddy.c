@@ -101,20 +101,19 @@ int level(int req) {
   // int total = req + sizeof(struct peggysue);
 
   int i = 0;
-  int size = 1 << MIN;
+  int size = 1 << MIN; // Min block is 2^5 = 32 bytes
   while(total > size) { // double size until we have enough
     size <<= 1;
-    i++;
+    i++; // keep track of level (index)
   }
   return i;
 }
 
-// Should we not set flags?
 // Splits block and returns secondary, primary is the argument now
 struct head* split(struct head *block) {
   int index = block->level - 1;
   int mask = 0x1 << (index + MIN); // find relevant bit for buddy
-  struct head* secondary = (struct head*)((long int)block | mask);
+  struct head* secondary = (struct head*)((long int)block | mask); // buddy has higher address
   block->level = index;
   secondary->level = index;
   block->status = Free;
@@ -123,6 +122,7 @@ struct head* split(struct head *block) {
 }
 
 void addBlockToFlists(struct head* block) {
+  // Always add to head of list
   struct head* first = flists[block->level];
   /*
   if(block->level == 5) {
@@ -131,7 +131,7 @@ void addBlockToFlists(struct head* block) {
   assert(block != first);
   */
   if(first != NULL) {
-    first->prev = block;
+    first->prev = block; // Link
     block->next = first;
   }
   flists[block->level] = block;
@@ -165,7 +165,7 @@ void removeBlockFromFlists(struct head* block) {
 
 struct head* splitUntilMatchingLevel(struct head* block, int level) {
 
-  while(block->level > level) {
+  while(block->level > level) { // Split until right size
     struct head* buddy = split(block);
     addBlockToFlists(buddy);
   }
