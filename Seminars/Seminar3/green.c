@@ -18,7 +18,9 @@ static void init() __attribute__((constructor));
 
 void green_thread();
 void add_to_ready_queue(green_t* thread);
-green_t* pop_ready_queue();
+void set_next_running();
+void add_to_queue(green_t** queue, green_t* thread_to_add);
+green_t* pop_from_queue(green_t** queue);
 
 void init() {
   getcontext(&main_cntx);
@@ -66,12 +68,10 @@ void green_thread() {
   this->zombie = TRUE;
 
   // find the next thread to run
-  green_t* next = pop_ready_queue();
+  set_next_running();
   // Now we are setting running->next to NULL as well, not needed if not reusing threads?
 
-  running = next;
-  setcontext(next->context); // Thread's life ends here (RIP)
-
+  setcontext(running->context); // Thread's life ends here
 }
 
 int green_yield() {
@@ -79,10 +79,8 @@ int green_yield() {
   // add susp to ready queue
   add_to_ready_queue(susp);
   // select the next thread for execution
-  green_t* next = pop_ready_queue();
-
-  running = next;
-  swapcontext(susp->context, next->context); // Save this context to susp and continue from next
+  set_next_running();
+  swapcontext(susp->context, running->context); // Save this context to susp and continue from next
 }
 
 int green_join(green_t* thread) {
@@ -97,29 +95,61 @@ int green_join(green_t* thread) {
     green_t* current = thread->join;
     while(current->next != NULL)
       current = current->next;
-      
+
     current->next = susp;
   }
 
   // select the next thread for execution
-  green_t* next = pop_ready_queue();
+  set_next_running();
 
-  running = next;
-  swapcontext(susp->context, next->context);
+  swapcontext(susp->context, running->context);
   return 0;
+}
+
+void green_cond_init(green_cond_t* cond) {
+  cond->queue = NULL;
+}
+
+void green_cond_wait(green_cond_t* cond) {
+  add_to_queue(&(cond->queue), running);
+  green_t* susp = running;
+  set_next_running();
+  swapcontext(susp->context, running->context);
+}
+
+void green_cond_signal(green_cond_t* cond) {
+  green_t* signalled = pop_from_queue(&cond->queue);
+  add_to_ready_queue(signalled);
 }
 
 // Put thread last in queue
 void add_to_ready_queue(green_t* ready) {
-  green_t* current = running;
-  while(current->next != NULL)
-    current = current->next;
-
-  current->next = ready;
+  add_to_queue(&running, ready);
 }
 
-green_t* pop_ready_queue() {
-  green_t* next = running->next;
-  running->next = NULL;
-  return next;
+void set_next_running() {
+  pop_from_queue(&running);
+}
+
+void add_to_queue(green_t** queue, green_t* thread_to_add) {
+  green_t* current = *queue;
+  if(current == NULL) {
+    *queue = thread_to_add;
+  } else {
+    while(current->next != NULL)
+      current = current->next;
+
+    current->next = thread_to_add;
+  }
+}
+
+// Takes pointer to pointer to be able to not only pop,
+// but to increment queue head as well
+green_t* pop_from_queue(green_t** queue) {
+  green_t* popped = *queue;
+  if(popped != NULL) {
+    *queue = popped->next;
+    popped->next = NULL;
+  }
+  return popped;
 }
