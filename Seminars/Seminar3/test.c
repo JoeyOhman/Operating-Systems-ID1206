@@ -4,7 +4,10 @@
 
 int flag = 0;
 green_cond_t cond;
-int numThreads = 10;
+green_mutex_t mutex;
+int numThreads = 2;
+
+int counter = 0;
 
 void* testCV(void* arg) {
   int id = *(int*)arg;
@@ -49,7 +52,25 @@ void* testJoin(void* arg) {
       i++;
 }
 
+void* testSharedResource(void* arg) {
+  int id = *(int*)arg;
+  for(int i = 0; i < 1000000; i++) {
+    green_mutex_lock(&mutex);
+    int temp = counter;
+
+    int dummy = 0;
+    if(temp > 1337) // waste time between read and write
+      dummy++;
+
+    temp++;
+    counter = temp;
+    green_mutex_unlock(&mutex);
+  }
+}
+
 int main() {
+  green_cond_init(&cond);
+  green_mutex_init(&mutex);
   for(int runs = 0; runs < 1; runs++) {
     green_t threads[numThreads];
 
@@ -57,10 +78,8 @@ int main() {
     for(int i = 0; i < numThreads; i++)
       args[i] = i;
 
-    green_cond_init(&cond);
-
     for(int i = 0; i < numThreads; i++) {
-      green_create(&threads[i], testCV, &args[i]);
+      green_create(&threads[i], testSharedResource, &args[i]);
       //printf("Thread %d created!\n", i);
     }
 
@@ -76,6 +95,7 @@ int main() {
     }
 
   }
+  printf("counter: %d\n", counter);
   printf("done\n");
 
   return 0;
