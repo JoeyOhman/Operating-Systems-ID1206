@@ -147,12 +147,28 @@ void green_cond_init(green_cond_t* cond) {
   cond->queue = NULL;
 }
 
-void green_cond_wait(green_cond_t* cond) {
+void green_cond_wait(green_cond_t* cond, green_mutex_t* mutex) {
   sigprocmask(SIG_BLOCK, &block, NULL);
   add_to_queue(&(cond->queue), running);
+
+  if(mutex != NULL) { // Release lock before waiting
+    add_to_ready_queue(mutex->susp); // Adds all suspended to ready Q
+    mutex->susp = NULL;
+    mutex->taken = FALSE;
+  }
   green_t* susp = running;
   set_next_running();
   swapcontext(susp->context, running->context);
+
+  if(mutex != NULL) { // Reacquire lock before returning
+    while(mutex->taken) { // Duplicated code from mutex_lock
+      add_to_queue(&mutex->susp, susp);
+      set_next_running(); // sets susp->next = NULL
+      swapcontext(susp->context, running->context);
+    }
+    mutex->taken = TRUE;
+  }
+
   sigprocmask(SIG_UNBLOCK, &block, NULL);
 }
 
@@ -230,6 +246,7 @@ green_t* pop_from_queue(green_t** queue) {
   return popped;
 }
 
+// For debugging
 int queue_length(green_t* queue) {
   green_t* current = queue;
   int counter = 1;
